@@ -1,2 +1,2 @@
 # EER_AI
-The EER AI project is to help assess submissions from open and targeted organization and individuals or provide feedback to the EER Panel.
+The EER AI project is to help assess submissions from open and targeted organization and individuals or provide feedback to the EER Panel. The panel is composed of 13 experts from various fields across the health sector, who review domestic and international approaches and best practices for the development of preventive health care guidelines, and engage domestic and international experts and stakeholders. The goal is to elicit responses for recommendations related to the Task Force
