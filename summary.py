@@ -1,6 +1,9 @@
 from google.cloud import storage
 from google.cloud import aiplatform
 import os
+import vertexai
+from vertexai.language_models import TextGenerationModel
+import pandas as pd
 
 def list_text_files_in_gcs(bucket_name, prefix=""):
     """
@@ -38,53 +41,68 @@ def read_text_file_from_gcs(bucket_name, file_name):
     # Download the content as a string
     return blob.download_as_text()
 
-def summarize_text(text, model_endpoint, project_id, location="us-central1"):
+def summarize_text_with_vertexai(text, project_id, location):
     """
     Summarizes a given text using Vertex AI's generative models.
 
     Args:
         text (str): The text to summarize.
-        model_endpoint (str): Vertex AI model endpoint.
         project_id (str): Google Cloud project ID.
         location (str): Location of the Vertex AI model (default: "us-central1").
 
     Returns:
         str: Summary of the input text.
     """
-    aiplatform.init(project=project_id, location=location)
+    # Initialize Vertex AI
+    vertexai.init(project=project_id, location=location)
+    parameters = {
+        "top_p": 0.95,
+        "top_k": 40,
+    }
 
-    # Initialize the prediction service
-    endpoint = aiplatform.Endpoint(model_endpoint)
+    # Load the text generation model
+    model = TextGenerationModel.from_pretrained("publishers/google/models/gemini-pro")
+    # Summarize the text
+    response = model.predict(
+        prompt=f"Summarize the following text:\n{text}",
+        temperature=0.2,
+        max_output_tokens=256,
+    )
+    return response.text
 
-    # Send the text for summarization
-    response = endpoint.predict(instances=[{"content": text}])
-    summary = response.predictions[0].get("summary", "Summary not available")
 
-    return summary
-
-def main():
-    # Configuration
-    BUCKET_NAME = "your-bucket-name"
-    PREFIX = "text_files/"  # Optional folder prefix in the bucket
-    PROJECT_ID = "your-project-id"
-    MODEL_ENDPOINT = "projects/your-project-id/locations/us-central1/endpoints/your-endpoint-id"
+def main(bucket_name, prefix, project_id, location):
+    # List text files in the bucket
+    text_files = list_text_files_in_gcs(bucket_name, prefix)
+    print(f"Found {len(text_files)} text files.")
 
     # List text files in the bucket
-    text_files = list_text_files_in_gcs(BUCKET_NAME, PREFIX)
+    text_files = list_text_files_in_gcs(bucket_name, prefix)
     print(f"Found {len(text_files)} text files.")
+
+    summary_df = pd.DataFrame()
 
     # Process each file
     for file_name in text_files:
         print(f"Processing file: {file_name}")
-        
+
         # Read the content of the file
-        text_content = read_text_file_from_gcs(BUCKET_NAME, file_name)
+        text_content = read_text_file_from_gcs(bucket_name, file_name)
 
-        # Summarize the content
-        summary = summarize_text(text_content, MODEL_ENDPOINT, PROJECT_ID)
-
+        # Summarize the content using Vertex AI
+        summary = summarize_text_with_vertexai(text_content, project_id, location)
+        new_row = {file_name:summary}
+        summary_df = summary_df.append(new_row, ignore_index=True)
         # Print or save the summary
-        print(f"Summary for {file_name}:\n{summary}\n")
+        print(f"Summary for {file_name}")
+    
+    # export summary
+    summary_df.to_csv('output/summary.csv', index=False)
 
 if __name__ == "__main__":
-    main()
+    # Configuration
+    BUCKET_NAME = "eer_ai_input_20247253"
+    PREFIX = "submissions/"  # Optional folder prefix in the bucket
+    PROJECT_ID = "phx-01jd7g1rw9j"
+    LOCATION = "northamerica-northeast1"
+    main(BUCKET_NAME, PREFIX, PROJECT_ID, LOCATION)

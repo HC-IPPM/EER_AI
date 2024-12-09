@@ -70,7 +70,7 @@ if __name__ == "__main__":
     BUCKET_NAME = "eer_ai_input_2024"
     SOURCE_CSV_PATH = "input/ResponseLog(EER Submission).csv"
     BLOB_NAME_COLUMN = "unique_identifier"  # Replace with a column name from your CSV, or set to None
-    FOLDER_PREFIX = "submission/"  # Optional folder inside the bucket
+    FOLDER_PREFIX = "submissions/"  # Optional folder inside the bucket
     PROJECT_ID = "phx-01jd7g1rw9j"
 
     # Upload rows to GCS
