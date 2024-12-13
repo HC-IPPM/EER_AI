@@ -1,68 +1,59 @@
-from google.cloud import storage
 import vertexai
-from vertexai.language_models import TextEmbeddingModel
+from vertexai.language_models import TextEmbeddingModel, TextGenerationModel
+from google.cloud import storage
 import pinecone
 
-def embed_and_store_submissions(bucket_name, vector_db_name, project_id, location):
-    """
-    Embeds submissions from a GCS bucket and stores them in a vector database.
+# Initialize constants
+PROJECT_ID = "phx-01jd7g1rw9j"  # Replace with your project ID
+LOCATION = "northamerica-northeast1"  # Vertex AI location
+BUCKET_NAME = "your-bucket-name"  # Replace with your GCS bucket name
+VECTOR_DB_NAME = "submissions-vectors"  # Name of the Pinecone index
+PINECONE_API_KEY = "your-pinecone-api-key"  # Replace with your Pinecone API key
+PINECONE_ENVIRONMENT = "us-west1-gcp"  # Replace with your Pinecone environment
 
-    Args:
-        bucket_name (str): Name of the GCS bucket containing submissions.
-        vector_db_name (str): Name of the vector database.
-        project_id (str): Google Cloud project ID.
-    """
-    # Initialize Vertex AI and GCS
-    vertexai.init(project=project_id, location=location)
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
+# Initialize Vertex AI
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# Initialize Pinecone
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+if VECTOR_DB_NAME not in pinecone.list_indexes():
+    pinecone.create_index(VECTOR_DB_NAME, dimension=768)
+index = pinecone.Index(VECTOR_DB_NAME)
+
+# Initialize GCS
+storage_client = storage.Client()
+
+
+def embed_submissions():
+    """Embeds text submissions from a GCS bucket and stores them in a vector database."""
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blobs = bucket.list_blobs()
 
     # Load embeddings model
     embedding_model = TextEmbeddingModel.from_pretrained("textembedding-gecko")
 
-    # Initialize Pinecone
-    pinecone.init(api_key="your-pinecone-api-key", environment="us-west1-gcp")
-    if vector_db_name not in pinecone.list_indexes():
-        pinecone.create_index(vector_db_name, dimension=768)
-    index = pinecone.Index(vector_db_name)
-
-    # Process files in the GCS bucket
-    blobs = bucket.list_blobs()
     for blob in blobs:
         if blob.name.endswith(".txt"):
+            # Download and embed text
             text = blob.download_as_text()
             embedding = embedding_model.get_embeddings([text]).embeddings[0]
 
-            # Store in vector database
+            # Store in Pinecone
             index.upsert([(blob.name, embedding, {"text": text})])
             print(f"Embedded and stored: {blob.name}")
 
-def query_and_answer(question, vector_db_name, project_id, location):
-    """
-    Queries the vector database and generates an answer using retrieved context.
 
-    Args:
-        question (str): The question to query against the submissions.
-        vector_db_name (str): Name of the vector database.
-        project_id (str): Google Cloud project ID.
-
-    Returns:
-        str: The generated answer.
-    """
-    # Initialize Vertex AI
-    vertexai.init(project=project_id, location=location)
-
+def query_submissions(question):
+    """Queries the vector database and generates an answer using retrieved context."""
     # Load embeddings model
     embedding_model = TextEmbeddingModel.from_pretrained("textembedding-gecko")
     query_embedding = embedding_model.get_embeddings([question]).embeddings[0]
 
     # Query the vector database
-    pinecone.init(api_key="your-pinecone-api-key", environment="us-west1-gcp")
-    index = pinecone.Index(vector_db_name)
     results = index.query(query_embedding, top_k=3, include_metadata=True)
 
     # Combine the most relevant submissions as context
-    context = " ".join([item["metadata"]["text"] for item in results["matches"]])
+    context = "\n".join([item["metadata"]["text"] for item in results["matches"]])
 
     # Generate answer using the text generation model
     generation_model = TextGenerationModel.from_pretrained("text-bison")
@@ -73,8 +64,14 @@ def query_and_answer(question, vector_db_name, project_id, location):
     )
     return answer.text
 
-if __name__ == "__main__":
-    question = "What are the key concerns raised in the submissions?"
-    answer = query_and_answer(question, "submissions-vectors", "your-project-id")
-    print(f"Answer: {answer}")
 
+if __name__ == "__main__":
+    # Step 1: Embed all submissions
+    print("Embedding submissions from GCS...")
+    embed_submissions()
+
+    # Step 2: Query the embedded submissions
+    question = "what are the key recommendations?"
+    print(f"Querying submissions for: {question}")
+    answer = query_submissions(question)
+    print(f"Answer: {answer}")
